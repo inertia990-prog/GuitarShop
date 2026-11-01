@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>기타 공방</title>
+<style>
+  /* --px = 게임 1픽셀의 화면 크기, --fs = 도트 글꼴 크기 (skin.js가 정함) */
+  :root { --px: 4px; --fs: 22px; --fs-small: 18px; --fpx: 2px; }
+  html, body { margin: 0; height: 100%; background: #140a05; overflow: hidden; }
+  body { display: flex; align-items: center; justify-content: center; font-family: Galmuri11, "Malgun Gothic", sans-serif;
+         -webkit-font-smoothing: none; font-smooth: never; }
+  #game { position: relative; }
+  canvas { image-rendering: pixelated; display: block; touch-action: none; }
+  button { font-family: Galmuri11, sans-serif; -webkit-font-smoothing: none; }
+
+  /* 도트 테두리: 9조각 그림을 게임 픽셀 크기에 맞춰 늘림 */
+  .pix, #ui, #ui button, #chords button, #coach .card, #coach button, #ui .meter { image-rendering: pixelated; border-style: solid; }
+
+  /* 안내 포스트잇: 오른쪽 위에 붙어 있고 끌어서 옮길 수 있음. 제목을 누르면 접힘 (ui.js) */
+  #ui { position: absolute; right: calc(var(--px) * 3); top: calc(var(--px) * 3); width: calc(var(--px) * 92);
+        display: flex; flex-direction: column; gap: var(--px); cursor: grab; touch-action: none; user-select: none;
+        border-width: calc(var(--px) * 4); border-image: var(--skin-postit) 4 fill round; transform: rotate(0.6deg);
+        filter: drop-shadow(var(--px) var(--px) 0 rgba(20, 10, 5, 0.45));
+        padding: 0 var(--px); color: #3b2014; font-size: var(--fs); line-height: 1.35; }
+  #ui.drag { cursor: grabbing; transform: rotate(-1.5deg); }
+  /* 작게: 폭을 줄이고 글자를 9픽셀 도트 글꼴로 (정수 배율이라 글자가 번지지 않음) */
+  #ui.small { width: calc(var(--px) * 70); font-family: Galmuri9; font-size: var(--fs-small); }
+  #ui.small button { font-family: Galmuri9; font-size: var(--fs-small); padding: 0 var(--px); }
+  #ui.small .meter { width: calc(var(--px) * 32); }
+  /* 크기 버튼: 포스트잇 오른쪽 위 모서리 */
+  #ui button.size { position: absolute; right: calc(var(--px) * -2); top: calc(var(--px) * -3); z-index: 1;
+                    font-family: Galmuri9; font-size: var(--fs-small); line-height: 1; padding: 0 var(--px); }
+  #ui p { margin: 0; color: #4e2c1f; }
+  #ui .step { font-weight: bold; color: #3b2014; cursor: pointer; }
+  #ui .step::after { content: ' ▾'; color: #a8742f; }
+  #ui.fold .step::after { content: ' ▸'; }
+  #ui.fold .body > :not(.text), #ui.fold .text > :not(.step) { display: none; }
+  /* 할아버지 메모: 처음 하는 수리의 안내 (ui.js의 setGuide). 줄 쳐진 낡은 종이 */
+  #ui.memo .text { padding: var(--px) calc(var(--px) * 2); background: #fbf3dc repeating-linear-gradient(#fbf3dc 0 calc(var(--fs) * 1.35 - var(--fpx)), #e6d6ae 0 calc(var(--fs) * 1.35));
+                   border-left: var(--fpx) solid #d98a7a; transform: rotate(-0.8deg); }
+  #ui.memo .text::before { content: var(--memo, '할아버지 메모'); display: block; font-family: Galmuri9; font-size: var(--fs-small); color: #a8742f; }
+  #ui button.memo-btn { font-family: Galmuri9; font-size: var(--fs-small); padding: 0 var(--px); align-self: flex-start; }
+  #ui.fold button.memo-btn { display: none; }
+  #ui .body { display: flex; flex-direction: column; gap: var(--px); }
+  #ui .list { display: flex; flex-direction: column; gap: var(--px); }
+  #ui .list:empty, #ui .tabs:empty { display: none; }
+  #ui .buttons .off { display: none; } /* 포스트잇이 창보다 길면 다른 쪽으로 넘긴 버튼 (ui.js의 fitButtons) */
+  #ui .buttons .pager { width: 100%; }
+  #ui .pager { display: flex; align-items: center; justify-content: space-between; font-family: Galmuri9; font-size: var(--fs-small); color: #7a4528; }
+  /* 작업 꼬리표: 지금 하는 것은 노랗게, 끝낸 것은 ✓ */
+  #ui .tabs { display: flex; flex-wrap: wrap; gap: var(--px); padding-bottom: var(--px); border-bottom: var(--fpx) dashed #d9b84f; }
+  #ui .tabs button { font-family: Galmuri9; font-size: var(--fs-small); padding: 0 var(--px); }
+  #ui .tabs button.now { border-image-source: var(--skin-btn-on); color: #2e1a10; text-shadow: none; }
+  #ui .tabs button.done { border-image-source: var(--skin-btn-down); color: #c4b897; }
+  #ui .note { font-family: Galmuri9; font-size: var(--fs-small); color: #7a4528; margin-top: var(--fpx); }
+  #ui .note:empty { display: none; }
+  #ui .tuner { font-family: Galmuri9; font-size: var(--fs-small); color: #4e2c1f; }
+  #ui .meter { position: relative; width: calc(var(--px) * 40); height: calc(var(--px) * 3); margin-top: var(--px);
+               border-width: calc(var(--px) * 2); border-image: var(--skin-meter) 2 fill stretch; }
+  #ui .mid { position: absolute; left: 50%; top: calc(var(--px) * -2); width: var(--px); height: calc(var(--px) * 7); background: #c4b897; }
+  #ui .needle { position: absolute; top: calc(var(--px) * -1); width: calc(var(--px) * 2); height: calc(var(--px) * 5); background: #e3a83b;
+                box-shadow: var(--px) var(--px) 0 #140a05; }
+  #ui .needle.ok { background: #7cc06a; }
+  #ui .buttons { display: flex; flex-wrap: wrap; gap: var(--px); }
+  #ui .buttons:empty { display: none; }
+  #ui button, #coach button { pointer-events: auto; font-size: var(--fs); color: #fffaf0; background: none; cursor: pointer;
+               border-width: calc(var(--px) * 2); border-image: var(--skin-btn) 2 fill round;
+               padding: 0 calc(var(--px) * 2); text-shadow: var(--fpx) var(--fpx) 0 #2e1a10; }
+  #ui button:hover, #coach button:hover { border-image-source: var(--skin-btn-hover); }
+  #ui button:active, #coach button:active { border-image-source: var(--skin-btn-down); transform: translateY(var(--px)); }
+  #ui button[hidden] { display: none; }
+
+  #ui[hidden] { display: none; }
+
+  /* 나무 버튼 (타이틀·메뉴·≡) */
+  #title button, #menu button, #menuBtn, #viewBtn { image-rendering: pixelated; border-style: solid; font-family: Galmuri11, sans-serif; font-size: var(--fs);
+    color: #fffaf0; background: none; cursor: pointer; border-width: calc(var(--px) * 2); border-image: var(--skin-btn) 2 fill round;
+    padding: 0 calc(var(--px) * 3); text-shadow: var(--fpx) var(--fpx) 0 #2e1a10; }
+  #title button:hover, #menu button:hover, #menuBtn:hover, #viewBtn:hover { border-image-source: var(--skin-btn-hover); }
+  #title button:active, #menu button:active, #menuBtn:active, #viewBtn:active { border-image-source: var(--skin-btn-down); transform: translateY(var(--px)); }
+
+  /* 타이틀: 간판 위 게임 이름 (11픽셀 글꼴 3배), 아래 메뉴 */
+  #title { position: absolute; inset: 0; pointer-events: none; z-index: 4; }
+  #title[hidden] { display: none; }
+  #title .logo { position: absolute; left: calc(var(--px) * 90); top: calc(var(--px) * 38); width: calc(var(--px) * 140); height: calc(var(--px) * 26);
+    margin: 0; display: flex; align-items: center; justify-content: center; font-family: Galmuri11; font-weight: bold;
+    font-size: var(--fs-title); line-height: 1; color: #ffe7a8; letter-spacing: calc(var(--fpx) * 3);
+    text-shadow: calc(var(--fpx) * 3) 0 0 #2e1a10, calc(var(--fpx) * -3) 0 0 #2e1a10, 0 calc(var(--fpx) * 3) 0 #2e1a10, 0 calc(var(--fpx) * -3) 0 #2e1a10,
+                 calc(var(--fpx) * 3) calc(var(--fpx) * 6) 0 #140a05; }
+  #title .ask { position: absolute; left: 0; right: 0; bottom: calc(var(--px) * 22); margin: 0; text-align: center; font-size: var(--fs);
+    color: #ffe7a8; text-shadow: var(--fpx) var(--fpx) 0 #140a05; }
+  #title .menu { position: absolute; left: 0; right: 0; bottom: calc(var(--px) * 6); display: flex; justify-content: center;
+    gap: calc(var(--px) * 4); pointer-events: auto; }
+
+  /* 일시정지·설정 창: 종이 카드 */
+  #menu { position: absolute; inset: 0; z-index: 20; background: rgba(12, 7, 4, 0.6); display: flex; align-items: center; justify-content: center; }
+  #menu[hidden] { display: none; }
+  #menu .card { image-rendering: pixelated; border-style: solid; border-width: calc(var(--px) * 4); border-image: var(--skin-paper) 4 fill round;
+    width: calc(var(--px) * 120); padding: var(--px) calc(var(--px) * 3); color: #3b2014; font-size: var(--fs); }
+  #menu .title { margin: 0 0 calc(var(--px) * 2); font-weight: bold; text-align: center; }
+  #menu .rows { display: flex; flex-direction: column; gap: calc(var(--px) * 2); }
+  #menu .slider { display: flex; flex-direction: column; font-family: Galmuri9; font-size: var(--fs-small); color: #4e2c1f; }
+  #menu input[type=range] { accent-color: #a8673b; width: 100%; cursor: pointer; }
+
+  /* 왼쪽 아래: ≡ 메뉴 버튼과 상태 표시 */
+  #menuBtn { position: absolute; left: calc(var(--px) * 3); bottom: calc(var(--px) * 3); z-index: 5; padding: 0 calc(var(--px) * 2); }
+  #menuBtn[hidden] { display: none; }
+  #viewBtn { position: absolute; left: calc(var(--px) * 18); bottom: calc(var(--px) * 3); z-index: 5; padding: 0 calc(var(--px) * 2); font-size: var(--fs-small); }
+  #viewBtn[hidden] { display: none; }
+  #hud { position: absolute; left: calc(var(--px) * 18); bottom: calc(var(--px) * 3); z-index: 5; display: flex; gap: calc(var(--px) * 4); align-items: center;
+    image-rendering: pixelated; border-style: solid; border-width: calc(var(--px) * 2); border-image: var(--skin-btn-down) 2 fill round;
+    padding: 0 calc(var(--px) * 3); font-family: Galmuri9; font-size: var(--fs-small); color: #f1ead8; text-shadow: var(--fpx) var(--fpx) 0 #140a05; pointer-events: none; }
+  #hud[hidden] { display: none; }
+  #hud .day { color: #ffe7a8; }
+  #hud .rep { color: #f4b8c8; }
+  #hud .rep:empty { display: none; }
+  #hud .rep::before { content: '♪ '; }
+  #hud .coin::before { content: ''; display: inline-block; width: calc(var(--px) * 3); height: calc(var(--px) * 3); margin-right: var(--px);
+    background: #f0d48a; box-shadow: inset calc(var(--px) * -1) calc(var(--px) * -1) 0 #a8742f, var(--px) var(--px) 0 #140a05; }
+
+  /* 마우스를 올린 물건 이름표 */
+  #tip { position: absolute; z-index: 6; pointer-events: none; white-space: normal; width: max-content; max-width: calc(var(--px) * 300); image-rendering: pixelated; border-style: solid;
+    border-width: calc(var(--px) * 2); border-image: var(--skin-paper) 4 fill round; padding: 0 var(--px);
+    font-family: Galmuri9; font-size: var(--fs-small); color: #3b2014; transform: translate(-50%, -130%); }
+  #tip[hidden] { display: none; }
+
+  /* 도트 커서 (skin.js가 게임 픽셀 크기에 맞춰 그림) */
+  body { cursor: var(--cur-default, default); }
+  #game button, #chords button, #ui .step { cursor: var(--cur-pointer, pointer) !important; }
+  #ui { cursor: var(--cur-grab, grab); }
+  #ui.drag { cursor: var(--cur-grabbing, grabbing); }
+
+  /* 튜너: 작은 클립 튜너처럼 (어두운 몸통, 연두색 화면 글자, 눈금) */
+  #ui .tuner { image-rendering: pixelated; border-style: solid; border-width: calc(var(--px) * 2); border-image: var(--skin-btn-down) 2 fill round;
+    padding: 0 calc(var(--px) * 2) var(--px); color: #c8f08a; text-shadow: var(--fpx) var(--fpx) 0 #140a05; align-self: flex-start; }
+  #ui .meter::before { content: ''; position: absolute; inset: 0; pointer-events: none;
+    background: repeating-linear-gradient(90deg, #3e5a2e 0 var(--px), transparent var(--px) calc(var(--px) * 5)); opacity: 0.8; }
+
+  /* 끝내기 버튼: 보이면 깜빡여서 눈에 띄게 */
+  #ui button.finish { animation: finish-blink 1s steps(1) infinite; }
+  @keyframes finish-blink { 50% { border-image-source: var(--skin-btn-on); color: #2e1a10; text-shadow: none; } }
+
+  /* 화면 아래 가운데 도구 칸: 아이콘 칸, 고른 것은 노랗게 */
+  #tools { position: absolute; left: 50%; bottom: calc(var(--px) * 3); transform: translateX(-50%); z-index: 5;
+    display: flex; gap: calc(var(--px) * 2); padding: var(--px) calc(var(--px) * 2);
+    image-rendering: pixelated; border-style: solid; border-width: calc(var(--px) * 4); border-image: var(--skin-panel) 4 fill round; }
+  #tools:empty { display: none; }
+  #tools .slot { display: flex; flex-direction: column; align-items: center; gap: var(--fpx); min-width: calc(var(--px) * 22);
+    padding: var(--px) var(--px) 0; background: none; border-style: solid; border-width: calc(var(--px) * 2);
+    border-image: var(--skin-btn-down) 2 fill round; image-rendering: pixelated; }
+  #tools .slot:hover { border-image-source: var(--skin-btn-hover); }
+  #tools .slot.on { border-image-source: var(--skin-btn-on); transform: translateY(calc(var(--px) * -1)); }
+  #tools .slot img { width: calc(var(--px) * 16); height: calc(var(--px) * 16); image-rendering: pixelated; }
+  #tools .slot span { font-family: Galmuri9; font-size: var(--fs-small); color: #f1ead8; text-shadow: var(--fpx) var(--fpx) 0 #140a05; white-space: nowrap; }
+  #tools .slot.on span { color: #2e1a10; text-shadow: none; }
+
+  /* "완료!" 도장: 커졌다가 쾅 찍히고 사라짐 */
+  #stamp { position: absolute; left: 50%; top: 38%; z-index: 8; pointer-events: none; padding: var(--px) calc(var(--px) * 4);
+    font-family: Galmuri11; font-weight: bold; font-size: calc(var(--fs) * 2); color: #c4361c; letter-spacing: calc(var(--fpx) * 2);
+    image-rendering: pixelated; border-style: solid; border-width: calc(var(--px) * 4); border-image: var(--skin-paper) 4 fill round;
+    text-shadow: var(--fpx) var(--fpx) 0 #f4b8b0; filter: drop-shadow(var(--px) var(--px) 0 rgba(20, 10, 5, 0.5)); transform: translate(-50%, -50%) rotate(-6deg); }
+  #stamp[hidden] { display: none; }
+  #stamp.pop { animation: stamp-pop 1.6s steps(8) forwards; }
+  @keyframes stamp-pop {
+    0% { transform: translate(-50%, -50%) rotate(-6deg) scale(2.2); opacity: 0; }
+    15% { transform: translate(-50%, -50%) rotate(-6deg) scale(1); opacity: 1; }
+    80% { transform: translate(-50%, -50%) rotate(-6deg) scale(1); opacity: 1; }
+    100% { transform: translate(-50%, -60%) rotate(-6deg) scale(1); opacity: 0; }
+  }
+
+  /* 코드 막대 (화면 왼쪽 위): 작은 나무 꼬리표 */
+  #chords { position: absolute; left: calc(var(--px) * 3); top: calc(var(--px) * 3); display: flex; gap: var(--px); flex-wrap: wrap; }
+  #chords button { font-family: Galmuri9; font-size: var(--fs-small); min-width: calc(var(--px) * 9); padding: 0 var(--px); color: #f1ead8; background: none;
+                   cursor: pointer; border-width: calc(var(--px) * 2); border-image: var(--skin-btn) 2 fill round; text-shadow: var(--fpx) var(--fpx) 0 #2e1a10; }
+  #chords button:hover { border-image-source: var(--skin-btn-hover); }
+  #chords button.on { border-image-source: var(--skin-btn-on); color: #2e1a10; text-shadow: none; }
+  #chords[hidden] { display: none; }
+
+  /* 튜토리얼 카드: 종이 쪽지. 강조할 곳만 밝게 두고 나머지를 어둡게 */
+  #coach { position: absolute; inset: 0; z-index: 10; overflow: hidden; }
+  #coach[hidden] { display: none; }
+  #coach.dim { background: rgba(20, 10, 5, 0.55); }
+  #coach .spot { position: absolute; border: var(--px) solid #ffe36e; box-shadow: 0 0 0 9999px rgba(20, 10, 5, 0.55); pointer-events: none; }
+  #coach .spot[hidden] { display: none; }
+  #coach .card { position: absolute; left: 50%; width: min(calc(var(--px) * 150), 86%); padding: var(--px) calc(var(--px) * 2);
+                 border-width: calc(var(--px) * 4); border-image: var(--skin-paper) 4 fill round; color: #2e1a10;
+                 filter: drop-shadow(var(--px) var(--px) 0 rgba(20, 10, 5, 0.5)); font-size: var(--fs); }
+  #coach .title { margin: 0 0 var(--fpx); font-weight: bold; color: #3b2014; }
+  #coach .body { margin: 0; line-height: 1.45; color: #4e2c1f; }
+  #coach .row { display: flex; align-items: center; gap: var(--px); margin-top: calc(var(--px) * 2); }
+  #coach .count { flex: 1; font-family: Galmuri9; font-size: var(--fs-small); color: #9c8572; }
+  #coach .skip { border-image-source: var(--skin-btn-down); }
+</style>
+  <script type="module" crossorigin src="./assets/index-CpnJU33a.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/index-DNnmyQLL.css">
+</head>
+<body>
+<div id="game">
+  <canvas id="screen"></canvas>
+  <div id="ui"></div>
+  <div id="chords"></div>
+</div>
+</body>
+</html>
